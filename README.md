@@ -171,6 +171,9 @@ Documentation
 * `timestamp` The column to treat as a timestamp. Must be a member of the
   `:columns` option. (default: select `updated_at` or `created_at`, in that
   order)
+* `timestamp_in_millis` Boolean specifying whether or not the column being
+  treated as a timestamp is in milliseconds (MySQL datetime when set to false
+  and by default).
 
 ### Handling Deletes
 

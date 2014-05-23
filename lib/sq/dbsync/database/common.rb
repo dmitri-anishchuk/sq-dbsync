@@ -29,7 +29,9 @@ module Sq::Dbsync::Database
 
       query = self[table_name].select(*plan.columns)
       if last_row_at
-        query = query.filter("#{plan.timestamp} > ?", last_row_at - overlap)
+        query = query.filter(
+            "#{plan.timestamp} > ?",
+            (plan.timestamp_in_millis ? ( (last_row_at.to_i - overlap) * 1000) : last_row_at - overlap))
       end
 
       sql = query.sql

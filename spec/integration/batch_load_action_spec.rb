@@ -12,12 +12,12 @@ describe SQD::BatchLoadAction do
   let(:last_synced_at) { now - 10 }
   let(:target) { test_target }
   let(:target_table_name) { :test_table }
-  let(:table_plan) {{
+  let(:common_table_plan) {{
     table_name: target_table_name,
     source_table_name: :test_table,
     columns: [:id, :col1, :updated_at],
     source_db: source,
-    indexes: index
+    indexes: index,
   }}
   let(:index) {{
     index_on_col1: { columns: [:col1], unique: false }
@@ -30,26 +30,26 @@ describe SQD::BatchLoadAction do
     SQD::Loggers::Null.new,
     ->{ @now }
   ) }
+  let(:using_millisecond_precision) { false }
 
   shared_examples_for 'a batch load' do
     before do
-      create_source_table_with(
+      create_source_table_with(using_millisecond_precision,
+      {
         id:         1,
         col1:       'hello',
         pii:        'don alias',
-        updated_at: now - 10
-      )
+        updated_at: using_millisecond_precision ? (now - 10).to_i * 1000 : now - 10
+      })
 
       registry.ensure_storage_exists
     end
 
     describe ':all columns options' do
-      let(:table_plan) {{
-        table_name: :test_table,
-        source_table_name: :test_table,
-        columns: :all,
-        source_db: source,
-      }}
+      let(:table_plan) { using_millisecond_precision ?
+        common_table_plan.merge({columns: :all, timestamp_in_millis: using_millisecond_precision}) :
+        common_table_plan.merge({columns: :all})
+      }
 
       it 'copies all columns to target' do
         action.call
@@ -110,13 +110,13 @@ describe SQD::BatchLoadAction do
       source[:test_table].insert(
         id: 7,
         col1: 'old',
-        updated_at: now - 600
+        updated_at: using_millisecond_precision ? (now - 600).to_i * 1000 : now - 600
       )
 
       target[:new_test_table].insert(
         id:         2,
         col1:       'already loaded',
-        updated_at: now - 200
+        updated_at: using_millisecond_precision ? (now - 200).to_i * 1000 : now - 200
       )
 
       action.call
@@ -130,7 +130,8 @@ describe SQD::BatchLoadAction do
       action.extract_data
       action.load_data
 
-      source[:test_table].insert(id: 2, col1: 'new', updated_at: now)
+      source[:test_table].insert(id: 2, col1: 'new',
+          updated_at: using_millisecond_precision ? now.to_i * 1000 : now)
 
       @now += 600
 
@@ -186,7 +187,8 @@ describe SQD::BatchLoadAction do
         data.keys.length.should == 3
         data[:id].should == 1
         data[:col1].should == 'hello'
-        data[:updated_at].to_i.should == (now - 10).to_i
+        data[:updated_at].to_i.should == (using_millisecond_precision ?
+            (now - 10).to_i * 1000 : (now - 10).to_i)
       end
     end
 
@@ -201,16 +203,52 @@ describe SQD::BatchLoadAction do
     end
   end
 
-  describe 'with MySQL source' do
+  context 'with MySQL source' do
     let(:source) { test_source(:source) }
 
-    it_should_behave_like 'a batch load'
+    context 'with timestamp in seconds' do
+      let(:table_plan) { common_table_plan }
+
+      it_should_behave_like 'a batch load'
+    end
+
+    context 'with timestamp in milliseconds' do
+      let(:using_millisecond_precision) { true }
+      let(:table_plan) { common_table_plan.merge({timestamp_in_millis: true}) }
+
+      it_should_behave_like 'a batch load'
+    end
+
+    context 'with timestamp not specified' do
+      let(:using_millisecond_precision) { false }
+      let(:table_plan) { common_table_plan }
+
+      it_should_behave_like 'a batch load'
+    end
   end
 
-  describe 'with PG source' do
+  context 'with PG source' do
     let(:source) { test_source(:postgres) }
 
-    it_should_behave_like 'a batch load'
+    context 'with timestamp in seconds' do
+      let(:table_plan) { common_table_plan }
+
+      it_should_behave_like 'a batch load'
+    end
+
+    context 'with timestamp in milliseconds' do
+      let(:using_millisecond_precision) { true }
+      let(:table_plan) { common_table_plan.merge({timestamp_in_millis: true}) }
+
+      it_should_behave_like 'a batch load'
+    end
+
+    context 'with timestamp not specified' do
+      let(:using_millisecond_precision) { false }
+      let(:table_plan) { common_table_plan }
+
+      it_should_behave_like 'a batch load'
+    end
 
     it 'loads records with time zones' do
       table_plan = {
@@ -218,7 +256,7 @@ describe SQD::BatchLoadAction do
         source_table_name: :test_table,
         columns: [:id, :col1, :updated_at, :ts_with_tz],
         source_db: source,
-        indexes: index
+        indexes: index,
       }
 
       action = SQD::BatchLoadAction.new(target,

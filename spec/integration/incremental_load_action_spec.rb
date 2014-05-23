@@ -12,12 +12,12 @@ describe SQD::IncrementalLoadAction do
   let(:source)         { test_source(:source) }
   let(:target) { test_target }
   let(:target_table_name) { :test_table }
-  let(:table_plan) {{
+  let(:common_table_plan) {{
     table_name: target_table_name,
     source_table_name: :test_table,
     columns: [:id, :col1, :updated_at],
     source_db: source,
-    indexes: {}
+    indexes: {},
   }}
   let(:registry) { SQD::TableRegistry.new(target) }
   let(:action) { SQD::IncrementalLoadAction.new(
@@ -27,31 +27,46 @@ describe SQD::IncrementalLoadAction do
     SQD::Loggers::Null.new,
     ->{ now }
   )}
+  let(:using_millisecond_precision) { false }
 
   shared_examples_for 'an incremental load' do
     before :each do
-      create_source_table_with({
+      create_source_table_with(using_millisecond_precision,
+      {
         id:         1,
         col1:       'old record',
-        updated_at:  last_synced_at - overlap - 1,
-        imported_at: last_synced_at - overlap - 1,
+        updated_at: using_millisecond_precision ?
+            (last_synced_at - overlap - 1).to_i * 1000 :
+            last_synced_at - overlap - 1,
+        imported_at: using_millisecond_precision ?
+            (last_synced_at - overlap - 1).to_i * 1000 :
+            last_synced_at - overlap - 1,
       }, {
         id:         2,
         col1:       'new record',
-        updated_at:  last_synced_at - overlap + 1,
-        imported_at: last_synced_at - overlap + 1,
+        updated_at: using_millisecond_precision ?
+            (last_synced_at - overlap + 1).to_i * 1000 :
+            last_synced_at - overlap + 1,
+        imported_at: using_millisecond_precision ?
+            (last_synced_at - overlap + 1).to_i * 1000 :
+            last_synced_at - overlap + 1,
       })
 
       setup_target_table(last_synced_at)
     end
 
-    describe ':all columns options' do
-      let(:table_plan) {{
-        table_name: :test_table,
-        source_table_name: :test_table,
-        columns: :all,
-        source_db: source,
-      }}
+    context 'with :all columns options' do
+      let(:table_plan) { using_millisecond_precision ?
+        common_table_plan.merge({columns: :all, timestamp_in_millis: using_millisecond_precision}) :
+        common_table_plan.merge({columns: :all})
+      }
+
+      #  table_name: :test_table,
+      #  source_table_name: :test_table,
+      #  columns: :all,
+      #  source_db: source,
+      #  timestamp_in_millis: using_millisecond_precision,
+      #}}
 
       it 'copies all columns to target' do
         action.call
@@ -61,7 +76,7 @@ describe SQD::IncrementalLoadAction do
       end
     end
 
-    describe 'when source and target are differently named' do
+    context 'when source and target are differently named' do
       let(:target_table_name) { :target_test_table }
 
       it 'copies all columns to the correctly named target' do
@@ -138,14 +153,20 @@ describe SQD::IncrementalLoadAction do
         should == [['new record']]
     end
 
-    describe 'with custom timestamp' do
+    context 'with custom timestamp' do
+      let(:table_plan) { using_millisecond_precision ?
+        common_table_plan.merge({columns: [:id, :col1, :imported_at],
+          timestamp_in_millis: using_millisecond_precision}) :
+        common_table_plan.merge({columsn: [:id, :col1, :imported_at]})
+      }
       let(:table_plan) {{
         table_name: :test_table,
         source_table_name: :test_table,
         columns: [:id, :col1, :imported_at],
         timestamp: :imported_at,
         source_db: source,
-        indexes: {}
+        indexes: {},
+        timestamp_in_millis: using_millisecond_precision,
       }}
 
       it 'copies source data to the target since the last synced row' do
@@ -194,15 +215,49 @@ describe SQD::IncrementalLoadAction do
     end
   end
 
-  describe 'with MySQL source' do
-    let(:source) { test_source(:source) }
+  context 'with timestamp in seconds' do
+    let(:using_millisecond_precision) { false }
+    let(:table_plan) { common_table_plan.merge({timestamp_in_millis: false}) }
 
-    it_should_behave_like 'an incremental load'
+    context 'with MySQL source' do
+      it_should_behave_like 'an incremental load'
+    end
+
+    context 'with PG source' do
+      let(:source) { test_source(:postgres) }
+
+      it_should_behave_like 'an incremental load'
+    end
   end
 
-  describe 'with PG source' do
-    let(:source) { test_source(:postgres) }
+  context 'with timestamp in milliseconds' do
+    let(:using_millisecond_precision) { true }
+    let(:table_plan) { common_table_plan.merge({timestamp_in_millis: true}) }
 
-    it_should_behave_like 'an incremental load'
+    context 'with MySQL source' do
+      it_should_behave_like 'an incremental load'
+    end
+
+    context 'with PG source' do
+      let(:source) { test_source(:postgres) }
+
+      it_should_behave_like 'an incremental load'
+    end
   end
+
+  context 'with timestamp not specified' do
+    let(:using_millisecond_precision) { false }
+    let(:table_plan) { common_table_plan }
+
+    context 'with MySQL source' do
+      it_should_behave_like 'an incremental load'
+    end
+
+    context 'with PG source' do
+      let(:source) { test_source(:postgres) }
+
+      it_should_behave_like 'an incremental load'
+    end
+  end
+
 end

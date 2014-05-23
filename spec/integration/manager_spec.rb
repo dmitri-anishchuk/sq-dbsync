@@ -26,16 +26,17 @@ describe SQD::Manager do
   let(:now) { Time.now.utc }
 
   before do
-    create_source_table_with(
+    create_source_table_with(false,
+    {
       id:         1,
       col1:       'hello',
       pii:        'don alias',
       updated_at: now - 10
-    )
+    })
   end
 
   it 'handles duplicate table names by selecting the first one' do
-    create_source_table_with(alt_source, {
+    create_source_table_with(false, alt_source, {
       col1:       'hello',
       pii:        'don alias'
     }, {

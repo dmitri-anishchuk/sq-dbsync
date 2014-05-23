@@ -76,6 +76,7 @@ module Sq::Dbsync
 
       columns = resolve_columns(plan, source_columns)
       plan.timestamp ||= ([:updated_at, :created_at] & columns)[0]
+      plan.timestamp_in_millis ||= false
       unless plan.timestamp
         raise(LoadError, "#{plan.source_table_name} has no timestamp column")
       end
@@ -115,6 +116,9 @@ module Sq::Dbsync
 
       last_row_at = timestamp_table(plan).
         max(plan.timestamp)
+      if plan.timestamp_in_millis
+        last_row_at = Time.at(last_row_at / 1000)
+      end
 
       file = make_writeable_tempfile
 

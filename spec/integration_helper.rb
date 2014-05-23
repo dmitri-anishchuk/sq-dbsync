@@ -1,7 +1,7 @@
 require 'spec_helper'
 require 'database_helper'
 
-def create_source_table_with(*rows)
+def create_source_table_with(using_millisecond_precision, *rows)
   # Total hack to allow source db to be passed as optional first argument.
   if rows[0].is_a?(Hash)
     source_db  = source
@@ -14,9 +14,9 @@ def create_source_table_with(*rows)
     primary_key  :id
     String       :col1
     String       :pii
-    DateTime     :updated_at
+    using_millisecond_precision ? (BigInt :updated_at) : (DateTime :updated_at)
     DateTime     :created_at
-    DateTime     :imported_at
+    using_millisecond_precision ? (BigInt :imported_at) : (DateTime :imported_at)
   end
 
   rows.each do |row|
@@ -40,6 +40,7 @@ def create_pg_source_table_with(*rows)
     DateTime     :updated_at
     DateTime     :created_at
     DateTime     :imported_at
+    BigInt       :imported_at_in_millis
     column :ts_with_tz, 'timestamp with time zone'
   end
 
