@@ -56,7 +56,7 @@ module Sq::Dbsync::Database
     def delete_recent(plan, since)
       ensure_connection
       query = db[plan.table_name].
-        filter("#{plan.timestamp} > ?", since)
+        filter("#{plan.timestamp} > ?", plan.timestamp_in_millis ? since.to_i * 1000 : since)
 
       if plan.aux_timestamp_column
         query = query.filter(
